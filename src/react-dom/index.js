@@ -35,7 +35,8 @@ let setAttribute = function (dom, key, value = "") {
         }
     } else if (/on\w+/.test(key)) {
         // 如果key为事件，那么key转换为小写
-        dom.setAttribute(key.toLowerCase(), value);
+        // dom.setAttribute(key.toLowerCase(), value);
+        dom[key.toLowerCase()] = value;
     } else {
         // 既不是style，也不是事件
         dom.setAttribute(key, value);
