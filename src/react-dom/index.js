@@ -1,9 +1,26 @@
+import React from "../react/";
+
+// vnode可能是字符串, 虚拟dom对象, 函数组件, 类组件
 const render = function (vnode, container) {
-    // 如果vnode是字符串，则直接返回字符串节点
-    if (typeof vnode === "string") {
+    const dom = _render(vnode)
+    return container.appendChild(dom);
+}
+
+const _render = function(vnode){
+     // 如果vnode是字符串，则直接返回字符串节点
+     if (typeof vnode === "string") {
         // 创建文本节点
-        const textDom = document.createTextNode(vnode);
-        return container.appendChild(textDom);
+        return document.createTextNode(vnode);
+    }
+
+    // 如果是函数组件或者是类组件，由babel给transform之后传进来的都是function
+    if(typeof vnode.tag === "function"){
+        // 1，创建组件
+        const component = createComponent(vnode.tag, vnode.attrs);
+        // 2, 渲染组件拿到虚拟dom
+        const _vnode = component.render();
+        // 3, 递归渲染虚拟dom
+        return _render(_vnode);
     }
 
     // 如果是对象
@@ -13,15 +30,35 @@ const render = function (vnode, container) {
     for (let atr in vnode.attrs) {
         setAttribute(dom, atr, vnode.attrs[atr]);
     }
-    // 3、把dom节点插入到container中
-    container.appendChild(dom);
-    // 4、遍历childrens数组，递归调用render，此时的dom就是container了
+    // 3、遍历childrens数组，递归调用render，此时的dom就是container了
     vnode.childrens.forEach(children => {
         render(children, dom);
     });
+
+    return dom;
 }
 
-let setAttribute = function (dom, key, value = "") {
+const createComponent = function(constructor, props){
+    let instance = null;
+    
+    if(constructor.prototype && typeof constructor.prototype.render === "function"){
+        // 如果原型链上有定义render方法则为类组件
+        instance = new constructor(props);
+    }else{
+        // 如果是函数组件,则构造成类Component的实例
+        instance = new React.Component(props);
+        // 实例的构造函数指向函数组件
+        instance.constructor = constructor;
+        // 重写render函数
+        instance.render = function(){
+            return constructor(props);
+        }
+    }
+
+    return instance;
+}
+
+const setAttribute = function (dom, key, value = "") {
     if (key === "style") {
         // 如果key为style，value有可能是字符串，也有可能是个对象
         if (typeof value === "string") {

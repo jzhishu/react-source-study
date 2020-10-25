@@ -1,3 +1,5 @@
+import Component from "./Component";
+
 const createElement = function (tag, attrs, ...childrens) {
     return {
         tag,
@@ -7,5 +9,6 @@ const createElement = function (tag, attrs, ...childrens) {
 }
 
 export default {
-    createElement
+    createElement,
+    Component
 }
