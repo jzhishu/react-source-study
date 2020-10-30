@@ -10,6 +10,7 @@
             {
                 "prama": "React.createElement"
             }
-        ]
+        ],
+        "transform-object-rest-spread"
     ]
 }
