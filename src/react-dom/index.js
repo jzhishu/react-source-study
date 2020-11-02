@@ -1,102 +1,21 @@
 import React from "../react/";
 
-// vnode可能是字符串, 虚拟dom对象, 函数组件, 类组件
-// const render = function (vnode, container) {
-//     const dom = _render(vnode)
-//     return container.appendChild(dom);
-// }
-
-// const _render = function (vnode) {
-//     // 如果vnode是字符串，则直接返回字符串节点
-//     if (typeof vnode === "string") {
-//         // 创建文本节点
-//         return document.createTextNode(vnode);
-//     }
-
-//     // 如果是函数组件或者是类组件，由babel给transform之后传进来的都是function
-//     if (typeof vnode.tag === "function") {
-//         // 创建组件
-//         const component = createComponent(vnode.tag, vnode.attrs);
-//         // 渲染组件拿到虚拟dom
-//         const _vnode = component.render();
-//         if (!component._vnode) {
-//             // 如果component上没有挂在虚拟dom，则还没有进行初次渲染
-//             // 所以要执行componentWillMount
-//             if (component.componentWillMount) component.componentWillMount();
-//         } else if (component.componentWillReceiveProps) {
-//             // 如果已经挂在了虚拟dom，说明已经渲染过了
-//             // 那么在此时视为更新props
-//             component.componentWillReceiveProps();
-//         }
-//         component._vnode = _vnode;
-//         // 递归渲染虚拟dom
-//         return _render(_vnode);
-//     }
-
-//     // 如果是对象
-//     // 1、根据tag创建一个dom对象
-//     let dom = document.createElement(vnode.tag);
-//     // 2、遍历属性为，dom添加属性
-//     for (let atr in vnode.attrs) {
-//         setAttribute(dom, atr, vnode.attrs[atr]);
-//     }
-//     // 3、遍历childrens数组，递归调用render，此时的dom就是container了
-//     vnode.childrens.forEach(children => {
-//         render(children, dom);
-//     });
-
-//     return dom;
-// }
-
-// const createComponent = function (constructor, props) {
-//     let instance = null;
-
-//     if (constructor.prototype && typeof constructor.prototype.render === "function") {
-//         // 如果原型链上有定义render方法则为类组件
-//         instance = new constructor(props);
-//     } else {
-//         // 如果是函数组件,则构造成类Component的实例
-//         instance = new React.Component(props);
-//         // 实例的构造函数指向函数组件
-//         instance.constructor = constructor;
-//         // 重写render函数
-//         instance.render = function () {
-//             return constructor(props);
-//         }
-//     }
-
-//     return instance;
-// }
-
-// const setAttribute = function (dom, key, value = "") {
-//     if (key === "style") {
-//         // 如果key为style，value有可能是字符串，也有可能是个对象
-//         if (typeof value === "string") {
-//             // 如果style为字符串,直接赋值给dom
-//             dom.style.cssText = value;
-//         } else if (typeof value === "object") {
-//             // 如果style为对象，遍历对象为dom赋值
-//             for (let k in value) {
-//                 dom.style[k] = value;
-//             }
-//         }
-//     } else if (/on\w+/.test(key)) {
-//         // 如果key为事件，那么key转换为小写
-//         // dom.setAttribute(key.toLowerCase(), value);
-//         dom[key.toLowerCase()] = value;
-//     } else {
-//         // 既不是style，也不是事件
-//         dom.setAttribute(key, value);
-//     }
-// }
-
-// export default {
-//     render
-// }
-
-// 这里用element代替React元素，用node代替dom元素
+// 定义一个指针用于保存下一个任务单元
+let nextUnitOfWork = null;
+let wipRoot = null;
 
 function render(element, container) {
+    // 吧rootDom初始化为最初的UnitOfWork
+    wipRoot = {
+        dom: container,
+        props: {
+            children: [element]
+        }
+    }
+    nextUnitOfWork = wipRoot;
+}
+
+function createDom(element) {
     // 首先吧根据element创建node, 如果是字符串则创建文本节点
     const dom =
         element.type === "TEXT_ELEMENT"
@@ -113,11 +32,100 @@ function render(element, container) {
             dom[name] = element.props[name]
         })
 
-    element.props.children.forEach(child => {
-        render(child, dom);
-    });
+    return dom;
+}
 
-    container.appendChild(dom);
+// 用于循环执行任务单元的函数
+function workLoop(deadLine) {
+    // 是否需要中断执行
+    let shouldYield = false;
+    // 当nextUnitOfWork存在且不中断执行，则遍历
+    while (nextUnitOfWork && !shouldYield) {
+        // 执行新的下一个任务单元，且更新下一个任务单元的指针
+        nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+
+        // 是否需要中止执行
+        shouldYield = deadLine.timeRemaining() < 1;
+    }
+
+    // 当最后一个任务单元执行，想页面中添加元素
+    if (!nextUnitOfWork && wipRoot) {
+        commitRoot();
+    }
+
+    // 浏览器在主进程空闲的时候会执行通过这个api注册的回调
+    requestIdleCallback(workLoop);
+}
+
+requestIdleCallback(workLoop);
+
+// 执行当前的任务单元，向页面中渲染dom，并且返回下一个页面单元
+function performUnitOfWork(nextUnitOfWork) {
+    // 取出fiber中的而一些指针
+    // const { dom, parent, props } = nextUnitOfWork;
+    // 先添加dom节点
+    if (!nextUnitOfWork.dom) {
+        nextUnitOfWork.dom = createDom(nextUnitOfWork);
+    }
+    // 因为任务单元有可能会被浏览器中断执行，所以不能再这里添加dom，不然有可能UI没渲染完被中断了
+    // if (nextUnitOfWork.parent) {
+    //     nextUnitOfWork.parent.dom.appendChild(dom);
+    // }
+    // 所有的child创建fiber对象
+    let index = 0;
+    let prevSibling = null;
+
+    while (index < nextUnitOfWork.props.children.length) {
+        let child = nextUnitOfWork.props.children[index];
+
+        let newFiber = {
+            type: child.type,
+            props: child.props,
+            parent: nextUnitOfWork,
+            dom: null
+        }
+
+        if (index === 0) {
+            // 如果是第一次循环，是添加子节点
+            nextUnitOfWork.child = newFiber;
+        } else {
+            // 为prevSibling添加兄弟节点
+            prevSibling.sibling = newFiber;
+        }
+
+        // 更新prevSibling
+        prevSibling = newFiber;
+        index++;
+    }
+
+    // 搜索fiber，先找child，没有就找sibling，如果还没有就找parent继续循环
+    if (nextUnitOfWork.child) {
+        return nextUnitOfWork.nextUnitOfWork;
+    }
+    let nextFiber = nextUnitOfWork;
+    while (nextFiber) {
+        if (nextFiber.sibling) {
+            return nextFiber.sibling;
+        }
+
+        nextFiber = nextFiber.parent;
+    }
+}
+
+function commitRoot() {
+    commitWork(wipRoot.child);
+    wipRoot = null;
+}
+
+function commitWork(fiber) {
+    if (!fiber) {
+        return;
+    }
+
+    const domParent = fiber.parent.dom;
+    domParent.appendChild(fiber.dom);
+    commitWork(fiber.child);
+    commitWork(fiber.sibling);
 }
 
 export default {
