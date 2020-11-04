@@ -61,8 +61,6 @@ requestIdleCallback(workLoop);
 
 // 执行当前的任务单元，向页面中渲染dom，并且返回下一个页面单元
 function performUnitOfWork(nextUnitOfWork) {
-    // 取出fiber中的而一些指针
-    // const { dom, parent, props } = nextUnitOfWork;
     // 先添加dom节点
     if (!nextUnitOfWork.dom) {
         nextUnitOfWork.dom = createDom(nextUnitOfWork);
@@ -82,7 +80,7 @@ function performUnitOfWork(nextUnitOfWork) {
             type: child.type,
             props: child.props,
             parent: nextUnitOfWork,
-            dom: null
+            dom: createDom(child)
         }
 
         if (index === 0) {
@@ -100,7 +98,7 @@ function performUnitOfWork(nextUnitOfWork) {
 
     // 搜索fiber，先找child，没有就找sibling，如果还没有就找parent继续循环
     if (nextUnitOfWork.child) {
-        return nextUnitOfWork.nextUnitOfWork;
+        return nextUnitOfWork.child;
     }
     let nextFiber = nextUnitOfWork;
     while (nextFiber) {
