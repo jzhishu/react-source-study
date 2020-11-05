@@ -1,8 +1,12 @@
 import React from "../react/";
 
-// 定义一个指针用于保存下一个任务单元
+// 一个指针用于保存下一个任务单元
 let nextUnitOfWork = null;
+// 一个变量表示fiber tree的根节点
 let wipRoot = null;
+// 一个变量表示之前渲染过的fiber tree
+let currentRoot = null;
+let deletions = null;
 
 function render(element, container) {
     // 吧rootDom初始化为最初的UnitOfWork
@@ -10,8 +14,12 @@ function render(element, container) {
         dom: container,
         props: {
             children: [element]
-        }
+        },
+        // 一个指针指向之前渲染过的fiber tree
+        alternate: currentRoot
     }
+
+    deletions = [];
     nextUnitOfWork = wipRoot;
 }
 
@@ -48,8 +56,8 @@ function workLoop(deadLine) {
         shouldYield = deadLine.timeRemaining() < 1;
     }
 
-    // 当最后一个任务单元执行，想页面中添加元素
     if (!nextUnitOfWork && wipRoot) {
+        // 到这里，整个fiber树已经创建完了，当最后一个任务单元执行，现在向页面中添加元素
         commitRoot();
     }
 
@@ -69,33 +77,7 @@ function performUnitOfWork(nextUnitOfWork) {
     // if (nextUnitOfWork.parent) {
     //     nextUnitOfWork.parent.dom.appendChild(dom);
     // }
-    // 所有的child创建fiber对象
-    let index = 0;
-    let prevSibling = null;
-
-    while (index < nextUnitOfWork.props.children.length) {
-        let child = nextUnitOfWork.props.children[index];
-
-        let newFiber = {
-            type: child.type,
-            props: child.props,
-            parent: nextUnitOfWork,
-            dom: createDom(child)
-        }
-
-        if (index === 0) {
-            // 如果是第一次循环，是添加子节点
-            nextUnitOfWork.child = newFiber;
-        } else {
-            // 为prevSibling添加兄弟节点
-            prevSibling.sibling = newFiber;
-        }
-
-        // 更新prevSibling
-        prevSibling = newFiber;
-        index++;
-    }
-
+    reconcileChild(nextUnitOfWork);
     // 搜索fiber，先找child，没有就找sibling，如果还没有就找parent继续循环
     if (nextUnitOfWork.child) {
         return nextUnitOfWork.child;
@@ -110,8 +92,71 @@ function performUnitOfWork(nextUnitOfWork) {
     }
 }
 
+// diff算法实现
+function reconcileChild(wipFiber) {
+    // 所有的child创建fiber对象
+    let index = 0;
+    let prevSibling = null;
+    let children = wipFiber.props.children;
+    let oldFiber = wipFiber.alternate && wipFiber.alternate.child
+
+    while (index < children.length || oldFiber != null) {
+        let child = children[index];
+
+        const sameType =
+            oldFiber &&
+            child &&
+            oldFiber.type === child.type;
+        let newFiber = null;
+
+        if (sameType) {
+            // 如果之前渲染过的fiber和新的fiber的type是一致的，比如都是div
+            // 则直接按照新的props更新
+            newFiber = {
+                type: oldFiber.type,
+                props: child.props,
+                dom: oldFiber.dom,
+                parent: wipFiber,
+                alternate: oldFiber,
+                effectTag: "UPDATE"
+            }
+        }
+        if (child && !sameType) {
+            // 如果type不一致，但是这里有新的fiber，则这里要创建一个新的dom元素
+            newFiber = {
+                type: child.type,
+                props: child.props,
+                dom: null,
+                parent: wipFiber,
+                alternate: null,
+                effectTag: "PLACEMENT"
+            }
+        }
+        if (oldFiber && !sameType) {
+            // 如果这里type不一致，但是oldFiber存在则删除之前的dom
+            oldFiber.effectTag = "DELETION"
+            deletions.push(oldFiber)
+        }
+
+        if (index === 0) {
+            // 如果是第一次循环，是添加子节点
+            wipFiber.child = newFiber;
+        } else {
+            // 为prevSibling添加兄弟节点
+            prevSibling.sibling = newFiber;
+        }
+
+        // 更新prevSibling
+        prevSibling = newFiber;
+        index++;
+    }
+}
+
 function commitRoot() {
+    deletions.forEach(commitWork)
     commitWork(wipRoot.child);
+    // 保存之前要渲染的fiber tree
+    currentRoot = wipRoot;
     wipRoot = null;
 }
 
@@ -121,9 +166,20 @@ function commitWork(fiber) {
     }
 
     const domParent = fiber.parent.dom;
-    domParent.appendChild(fiber.dom);
+    if (fiber.effectTag === "PLACEMENT" && fiber.dom) {
+        domParent.appendChild(fiber.dom);
+    } else if (fiber.effectTag === "DELETION" && fiber.dom) {
+        domParent.removeChild(fiber.dom);
+    } else if (fiber.effectTag === "UPDATE" && fiber.dom) {
+        updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+    }
+    // 递归链表
     commitWork(fiber.child);
     commitWork(fiber.sibling);
+}
+
+function updateDom(domElement, prevProps, nextProps) {
+
 }
 
 export default {
