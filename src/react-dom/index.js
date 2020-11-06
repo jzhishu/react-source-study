@@ -8,6 +8,15 @@ let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
 
+// 判断这个是不是dom元素的属性
+const isProperty = key => (key !== "children") && isEvent(key);
+
+const isNew = (prevProps, nextProps) => key => prevProps[key] !== nextProps[key];
+
+const isGone = (nextProps) => key => !(key in nextProps);
+
+const isEvent = key => key && key.startWidth("on");
+
 function render(element, container) {
     // 吧rootDom初始化为最初的UnitOfWork
     wipRoot = {
@@ -29,9 +38,6 @@ function createDom(element) {
         element.type === "TEXT_ELEMENT"
             ? document.createTextNode("")
             : document.createElement(element.type);
-
-    // 判断这个是不是dom元素的属性
-    const isProperty = key => key !== "children";
 
     // 遍历属性，吧属性添加到dom上
     Object.keys(element.props)
@@ -179,7 +185,21 @@ function commitWork(fiber) {
 }
 
 function updateDom(domElement, prevProps, nextProps) {
+    // 在prevProps上找出nextProps中不存在的propertyName，并且从dom上移除
+    Object.keys(prevProps)
+        .filter(isProperty)
+        .filter(isGone(nextProps))
+        .forEach(propertyName => {
+            dom[propertyName] = "";
+        });
 
+    // 在nextProps上找出与prevProps中值不同的属性名
+    Object.keys(nextProps)
+        .filter(isProperty)
+        .filter(isNew(prevProps, nextProps))
+        .forEach(propertyName => {
+            dom[propertyName] = nextProps[propertyName];
+        });
 }
 
 export default {
