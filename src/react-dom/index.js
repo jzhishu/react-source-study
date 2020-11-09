@@ -193,13 +193,37 @@ function updateDom(domElement, prevProps, nextProps) {
             domElement[propertyName] = "";
         });
 
-    // 在nextProps上找出与prevProps中值不同的属性名
+    // 在nextProps上找出与prevProps中值不同的属性名，并更新到dom上
     Object.keys(nextProps)
         .filter(isProperty)
         .filter(isNew(prevProps, nextProps))
         .forEach(propertyName => {
             domElement[propertyName] = nextProps[propertyName];
         });
+
+    // 在prevProps上找出nextProps中存在的事件属性，存在则解除绑定
+    Object.keys(prevProps)
+        .filter(isEvent)
+        .filter(propertyName => {
+            // 如果这个时间在nextProps上没有，或者nextProps上的function是新的，则返回
+            return !(propertyName in nextProps) || isNew(prevProps, nextProps)(propertyName);
+        })
+        .forEach(propertyName => {
+            // 解除dom上的绑定事件
+            const eventType = propertyName.toLowerCase().substring(2);
+            domElement.removeEventListener(eventType, prevProps[propertyName]);
+        });
+
+    // 在nextProps中绑定新的事件
+    Object.keys(nextProps)
+        .filter(isEvent)
+        .filter(isNew(prevProps, nextProps))
+        .forEach(propertyName => {
+            // 如果这个属性是事件，且是和prevProps上的函数不是同一个，则添加到dom
+            const eventType = propertyName.toLowerCase().substring(2);
+            domElement.addEventListener(eventType, nextProps[propertyName]);
+        });
+
 }
 
 export default {
