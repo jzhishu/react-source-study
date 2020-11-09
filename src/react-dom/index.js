@@ -190,7 +190,7 @@ function updateDom(domElement, prevProps, nextProps) {
         .filter(isProperty)
         .filter(isGone(nextProps))
         .forEach(propertyName => {
-            dom[propertyName] = "";
+            domElement[propertyName] = "";
         });
 
     // 在nextProps上找出与prevProps中值不同的属性名
@@ -198,7 +198,7 @@ function updateDom(domElement, prevProps, nextProps) {
         .filter(isProperty)
         .filter(isNew(prevProps, nextProps))
         .forEach(propertyName => {
-            dom[propertyName] = nextProps[propertyName];
+            domElement[propertyName] = nextProps[propertyName];
         });
 }
 
