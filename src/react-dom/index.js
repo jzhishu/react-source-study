@@ -9,13 +9,13 @@ let currentRoot = null;
 let deletions = null;
 
 // 判断这个是不是dom元素的属性
-const isProperty = key => (key !== "children") && isEvent(key);
+const isProperty = key => (key !== "children") && !isEvent(key);
 
 const isNew = (prevProps, nextProps) => key => prevProps[key] !== nextProps[key];
 
 const isGone = (nextProps) => key => !(key in nextProps);
 
-const isEvent = key => key && key.startWidth("on");
+const isEvent = key => key && key.startsWith("on");
 
 function render(element, container) {
     // 吧rootDom初始化为最初的UnitOfWork
@@ -39,12 +39,7 @@ function createDom(element) {
             ? document.createTextNode("")
             : document.createElement(element.type);
 
-    // 遍历属性，吧属性添加到dom上
-    Object.keys(element.props)
-        .filter(isProperty)
-        .forEach(name => {
-            dom[name] = element.props[name]
-        })
+    updateDom(dom, {}, element.props);
 
     return dom;
 }
@@ -142,6 +137,10 @@ function reconcileChild(wipFiber) {
             // 如果这里type不一致，但是oldFiber存在则删除之前的dom
             oldFiber.effectTag = "DELETION"
             deletions.push(oldFiber)
+        }
+
+        if (oldFiber) {
+            oldFiber = oldFiber.sibling
         }
 
         if (index === 0) {
