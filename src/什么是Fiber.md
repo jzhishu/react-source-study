@@ -60,8 +60,51 @@ react在v16版本实现了一种==异步可中断更新==机制，react将一次
     }
 ```
 在首次执行```ReactDOM.render```的时候，会根据```contianer```，创建出一个```FiberRootNode```的实例，这里也有一个属性值得关注```current```, ```fiberRootNode```创建完后，紧接着就会创建一个我们前面提到的```rootFiber```,而这个```current```则是指向```rootFiber```的,所以我们把```rootFiber```也称为```currentFiber```
+```javascript
+fiberRootNode ---current---> rootFiber
+rootFiber ---stateNode---> fiberRootNode
 ```
-graph TD
-    A[fiberRootNode] -->|current| B[currentFiber]
-    B --> |stateNode| A
+那么```alternate```这个指向的是谁呢？
+```
+rootFiber ---alternate---> workInProgressFiber
+```
+这个```workInProgress```其实也是一个Fiber的实例，那么他是怎么来的呢，看源码中方法```createWorkInProgress```的实现
+```javascript
+ function createWorkInProgress(current, pendingProps) {
+    var workInProgress = current.alternate;
+
+    if (workInProgress === null) {
+        // We use a double buffering pooling technique because we know that we'll
+        // only ever need at most two versions of a tree. We pool the "other" unused
+        // node that we're free to reuse. This is lazily created to avoid allocating
+        // extra objects for things that are never updated. It also allow us to
+        // reclaim the extra memory if needed.
+        workInProgress = createFiber(current.tag, pendingProps, current.key, current.mode);
+        workInProgress.elementType = current.elementType;
+        workInProgress.type = current.type;
+        workInProgress.stateNode = current.stateNode;
+
+        {
+            // DEV-only fields
+            workInProgress._debugID = current._debugID;
+            workInProgress._debugSource = current._debugSource;
+            workInProgress._debugOwner = current._debugOwner;
+            workInProgress._debugHookTypes = current._debugHookTypes;
+        }
+
+        workInProgress.alternate = current;
+        current.alternate = workInProgress;
+    } else {
+        workInProgress.pendingProps = pendingProps; // Needed because Blocks store data on type.
+
+        workInProgress.type = current.type; // We already have an alternate.
+    }
+
+    // 省略
+ }
+```
+这里的第一个参数```current```，就是我们上面提到的```currentFiber```，然后从函数内部的代码可以看到,创建```workInProgress```时，实际上是创建了一个新的```Fiber```，然后把```currentFiber```上的值都赋值给了```workInProgress```,==也就是说其实workInProgress和current是两个值相同的对象并且互相通过alternate关联==
+```
+workInProgress ---alternate---> current
+current ---alternate---> workInProgress
 ```
