@@ -99,8 +99,6 @@ rootFiber ---alternate---> workInProgressFiber
 
         workInProgress.type = current.type; // We already have an alternate.
     }
-
-    // 省略
  }
 ```
 这里的第一个参数```current```，就是我们上面提到的```currentFiber```，然后从函数内部的代码可以看到,创建```workInProgress```时，实际上是创建了一个新的```Fiber```，然后把```currentFiber```上的值都赋值给了```workInProgress```,==也就是说其实workInProgress和current是两个值相同的对象并且互相通过alternate关联==
@@ -108,3 +106,66 @@ rootFiber ---alternate---> workInProgressFiber
 workInProgress ---alternate---> current
 current ---alternate---> workInProgress
 ```
+
+# Fiber树是如何构建的
+前面讲了```Fiber```在```React```中的定义，以及```currentFiber```和```workInProgress```的创建，那么为什么要这样设计呢？其实```currentFiber```树就是代表的是已经渲染的组件对应的```Fiber```树，而```workInProgress```则是创建在内存中的树，这样做的目的是当发生组件更新的时候，先在内存中更新```workInProgress```,这种机制称为双缓存
+
+前面说了fiber其实其实也是任务单元UnitOfWork，这里有个方法叫```performUnitOfWork```,当workInProgress创建成功之后，```performUnitOfWork```就一直循环调用，直到`workInProgress`为`null`
+```javascript
+function workLoopSync() {
+    // Already timed out, so perform work without checking if we need to yield.
+    while (workInProgress !== null) {
+        performUnitOfWork(workInProgress);
+    }
+}
+```
+从这个循环可以看出，`performUnitOfWork`中一定会更新`workInProgress`，继续深入`performUnitOfWork`
+```javascript
+function performUnitOfWork(unitOfWork) {
+    var current = unitOfWork.alternate;
+    setCurrentFiber(unitOfWork);
+    var next;
+
+    if ((unitOfWork.mode & ProfileMode) !== NoMode) {
+        startProfilerTimer(unitOfWork);
+        next = beginWork$1(current, unitOfWork, subtreeRenderLanes);
+        stopProfilerTimerIfRunningAndRecordDelta(unitOfWork, true);
+    } else {
+        next = beginWork$1(current, unitOfWork, subtreeRenderLanes);
+    }
+
+    resetCurrentFiber();
+    unitOfWork.memoizedProps = unitOfWork.pendingProps;
+
+    if (next === null) {
+        // If this doesn't spawn new work, complete the current work.
+        completeUnitOfWork(unitOfWork);
+    } else {
+        workInProgress = next;
+    }
+}
+```
+从上方代码可以看出，`workInProgress`传进来后，先和current一起进入到beginWork中，然后打断点看一下，`beginWork`会返回一个新的`fiberNode`而它就是`workInProgress`的`child`或者兄弟`fiberNode`，也可能是`null`,不为`null`则会更新`workInProgress`，如果为`null`则将`workInProgress`传入`completeUnitOfWork`中，
+```javascript
+function completeUnitOfWork(unitOfWork) {
+    var completedWork = unitOfWork;
+    var current = completedWork.alternate;
+    var returnFiber = completedWork.return;
+    
+    // 省略
+    var siblingFiber = completedWork.sibling;
+
+    if (siblingFiber !== null) {
+        // If there is more work to do in this returnFiber, do that next.
+        workInProgress = siblingFiber;
+        return;
+    } // Otherwise, return to the parent
+    
+    completedWork = returnFiber; // Update the next thing we're working on in case something throws.
+    
+    workInProgress = completedWork;
+}
+```
+在`completeUnitOfWork`中可以看到，如果这个`unitOfWork`没有`sibling`则更新`workInProgress`为父级Fiber
+
+所以，其实在`performUnitOfWork`中不断执行的过程中，不断的更新`workInProgress`,这样将整颗树构建而成
