@@ -74,11 +74,7 @@ rootFiber ---alternate---> workInProgressFiber
     var workInProgress = current.alternate;
 
     if (workInProgress === null) {
-        // We use a double buffering pooling technique because we know that we'll
-        // only ever need at most two versions of a tree. We pool the "other" unused
-        // node that we're free to reuse. This is lazily created to avoid allocating
-        // extra objects for things that are never updated. It also allow us to
-        // reclaim the extra memory if needed.
+
         workInProgress = createFiber(current.tag, pendingProps, current.key, current.mode);
         workInProgress.elementType = current.elementType;
         workInProgress.type = current.type;
@@ -145,7 +141,7 @@ function performUnitOfWork(unitOfWork) {
     }
 }
 ```
-从上方代码可以看出，`workInProgress`传进来后，先和current一起进入到beginWork中，然后打断点看一下，`beginWork`会返回一个新的`fiberNode`而它就是`workInProgress`的`child`或者兄弟`fiberNode`，也可能是`null`,不为`null`则会更新`workInProgress`，如果为`null`则将`workInProgress`传入`completeUnitOfWork`中，
+从上方代码可以看出，`workInProgress`传进来后，先和current一起进入到beginWork中，然后打断点看一下，`beginWork`会返回一个新的`fiberNode`而它就是`workInProgress`的`childFiber`，也可能是`null`,不为`null`则会更新`workInProgress`，如果为`null`则将`workInProgress`传入`completeUnitOfWork`中，
 ```javascript
 function completeUnitOfWork(unitOfWork) {
     var completedWork = unitOfWork;
@@ -168,4 +164,47 @@ function completeUnitOfWork(unitOfWork) {
 ```
 在`completeUnitOfWork`中可以看到，如果这个`unitOfWork`没有`sibling`则更新`workInProgress`为父级Fiber
 
-所以，其实在`performUnitOfWork`中不断执行的过程中，不断的更新`workInProgress`,这样将整颗树构建而成
+总结，创建`rootFiber`后会创建一个与之相同的`fiber`名为`workInProgress`，接着会循环调用`performUnitOfWork`,在`performUnitOfWork`内部，会通过`beginWork`创建`workInProgress`的`childFiber`并且更新为`workInProgress`,然后再次进入循环`performUnitOfWork`，而如果没有`child`则回进入`completeUnitOfWork`，`completeUnitOfWork`中对`workInProgress`做一系列处理之后便会将其兄弟节点`sibling`更新为`workInProgress`，没有兄弟节点将其父节点`return`更新为`workInProgress`。
+
+这个`Fiber`树构建的过程中新的`fiber`的构建是**深度优先的**，只不过react用循环的方式，实现这一切而不是递归
+
+# Fiber节点的dom对象是何时创建的？
+上文中有提到一个方法叫做`completeUnitOfWork`，在这个方法中会执行`completeWork`看起来是跟`beginWork`对应的一个方法，一个是开始，一个是结束,进入方法`completeWork`可以看到，如果传进来的是`html`标签的`fiberNode`,那么这个节点则为`HostComponent`，会为它创建对应的dom对象
+```javascript
+    var instance = createInstance(type, newProps, rootContainerInstance,currentHostContext, workInProgress);
+    appendAllChildren(instance, workInProgress, false, false);
+    
+    workInProgress.stateNode = instance;
+```
+这里这个`instance`我们可以打断点看一下,其实就是原生的dom对象，那么进入`appendAllChildren`瞅瞅
+```javascript
+    appendAllChildren = function (parent, workInProgress, needsVisibilityToggle, isHidden) {
+        var node = workInProgress.child;
+
+        while (node !== null) {
+            if (node.tag === HostComponent || node.tag === HostText) {
+                appendInitialChild(parent, node.stateNode);
+            } else if (node.tag === HostPortal); else if (node.child !== null) {
+                node.child.return = node;
+                node = node.child;
+                continue;
+            }
+
+            if (node === workInProgress) {
+                return;
+            }
+
+            while (node.sibling === null) {
+                if (node.return === null || node.return === workInProgress) {
+                    return;
+                }
+
+                node = node.return;
+            }
+
+            node.sibling.return = node.return;
+            node = node.sibling;
+        }
+    };
+```
+分析一下其实就是找到`childFiber`然后判断类型，最终想要的结果就是把`childFiber`的`dom`对象给插入到`instance`下，因为前面提到过`beginWork`的过程是**深度优先**的，所以到这一步的时候`chide.stateNode`上已经有创建好的`dom`了，可以直接调用`appendInitialChild`,把`childFiber`对应的dom给插入
